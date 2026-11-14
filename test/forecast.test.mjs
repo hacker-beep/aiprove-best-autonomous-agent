@@ -3,7 +3,9 @@ import assert from "node:assert/strict";
 import {
   classify,
   directionPayload,
+  horizonDaysFromText,
   momentumProb,
+  percentile,
   signalPayload,
 } from "../lib/forecast.mjs";
 import { redact } from "../lib/logger.mjs";
@@ -104,6 +106,78 @@ test("classify: code/content/design bounties skipped", () => {
 test("classify: unknown-asset Brier bounty skipped, not crashed", () => {
   const r = classify({ slug: "forecast-doge-24h", metric: "Brier score", cat: "forecast" });
   assert.equal(r.kind, "skip");
+});
+
+test("classify: percent-move bounty is pctmove, NOT numeric (no price-as-percent)", () => {
+  const r = classify({
+    slug: "nvda-jensen-earnings",
+    title: "Call the NVDA move, first earnings after Jensen",
+    brief: "Submit a single signed percent for the move from Tuesday's close to Wednesday's close, e.g. 4.2 for up 4.2%.",
+    metric: "Absolute error of your predicted % move vs the real reaction-day close",
+    cat: "forecast",
+  });
+  assert.deepEqual(r, { kind: "pctmove", asset: "NVDA" });
+});
+
+test("classify: audit bounty resolves the challenge repo from the brief", () => {
+  const r = classify({
+    slug: "bughunt-stakepool",
+    title: "Audit StakePool.sol — find the planted vulnerabilities",
+    brief: "StakePool.sol is published at https://github.com/AIProveRH/stakepool-challenge. Find the planted vulnerabilities.",
+    metric: "Vulnerabilities correctly identified (set overlap vs answer key)",
+    cat: "development",
+  });
+  assert.deepEqual(r, {
+    kind: "audit",
+    repo: { owner: "AIProveRH", repo: "stakepool-challenge", url: "https://github.com/AIProveRH/stakepool-challenge" },
+  });
+});
+
+test("classify: audit bounty without a repo URL is skipped", () => {
+  const r = classify({
+    slug: "bughunt-mystery",
+    metric: "Vulnerabilities correctly identified",
+    cat: "development",
+    brief: "Find the bugs in this contract (no link given).",
+  });
+  assert.equal(r.kind, "skip");
+  assert.match(r.reason, /repo/);
+});
+
+test("classify: not-yet-launched market-cap call is skipped with the launch reason", () => {
+  const r = classify({
+    slug: "prove-mc-3d",
+    metric: "Absolute error of your predicted market cap (ETH) vs the real figure at launch + 72h",
+    cat: "forecast",
+  });
+  assert.equal(r.kind, "skip");
+  assert.match(r.reason, /launch/);
+});
+
+test("classify: 48h signal bounty gets a 2-day horizon", () => {
+  const r = classify({
+    slug: "eth-signal-pnl-hard",
+    title: "Best 48h ETH trading signal, net PnL after fees",
+    brief: "Submit a directional ETH signal (long or short, with size/confidence) for the next 48 hours.",
+    metric: "Net directional PnL after fees, replayed vs real ETH price",
+    cat: "trading",
+  });
+  assert.deepEqual(r, { kind: "signal", asset: "ethereum", horizonDays: 2 });
+});
+
+test("horizonDaysFromText: 24h -> 1, 48h -> 2, 7d -> 7", () => {
+  assert.equal(horizonDaysFromText("forecast-eth-24h"), 1);
+  assert.equal(horizonDaysFromText("next 48 hours"), 2);
+  assert.equal(horizonDaysFromText("48h ETH signal"), 2);
+  assert.equal(horizonDaysFromText("forecast-btc-7d"), 7);
+  assert.equal(horizonDaysFromText("Call BTC's 7-day direction"), 7);
+  assert.equal(horizonDaysFromText("no horizon here"), 1);
+});
+
+test("percentile: median and 90th percentile interpolate", () => {
+  assert.equal(percentile([1, 2, 3, 4, 5], 0.5), 3);
+  assert.equal(percentile([1, 2, 3, 4, 5], 0.9), 4.6);
+  assert.equal(percentile([10], 0.9), 10);
 });
 
 test("redact: masks Bearer tokens and 64-hex private keys", () => {

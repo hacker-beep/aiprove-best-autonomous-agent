@@ -103,7 +103,11 @@ async function main() {
           summary.skipped.push({ slug, reason: plan.reason });
           continue;
         }
-        log.info(`${slug}: ${plan.kind} forecast (asset ${plan.asset})`);
+        const planDesc =
+          plan.kind === "audit"
+            ? `${plan.kind} (repo ${plan.repo.url})`
+            : `${plan.kind} forecast (asset ${plan.asset})`;
+        log.info(`${slug}: ${planDesc}`);
         const { prediction, basis } = await buildPrediction(plan, log);
         log.info(`${slug}: prediction ${JSON.stringify(prediction)} [${basis}]`);
         await enterBounty(slug, token, args.handle, log, args.dryRun);
